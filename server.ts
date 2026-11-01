@@ -6,9 +6,20 @@ import express, {
 
 import { MongoClient } from "mongodb";
 import "dotenv/config"
+import cors from "cors"
+import cookieParser from "cookie-parser";
+import { error } from "node:console";
 
 const app = express()
 const port = process.env.PORT || 5000;
+
+app.use(cors({
+    origin: process.env.CLIENT_URL || "http://localhost:3000",
+}))
+
+app.use(express.json())
+app.use(cookieParser())
+
 
 const uri = process.env.MONGODB_URI
 if (!uri) {
@@ -39,5 +50,10 @@ app.get('/', (req: Request, res: Response) => {
 
 app.listen(port, async() => {
     await connectDB()
-    console.log(`Simple CRUD Server is running on port: ${port}`)
+        .then(() => {
+            console.log(`Simple CRUD Server is running on port: ${port}`)
+        })
+        .catch((err) => {
+            console.log(`Failedd to connected MongoDB: ${err.message}`)
+        })
 })
