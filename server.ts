@@ -1408,7 +1408,7 @@ app.listen(port, async () => {
 
         console.log(
             `Simple CRUD Server is running on port: ${port}`
-        );
+        )
 
     } catch (err: any) {
         console.log(
