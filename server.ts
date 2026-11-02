@@ -4,12 +4,11 @@ import express, {
     type Response,
 } from "express";
 
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import "dotenv/config"
 import cors from "cors"
 import cookieParser from "cookie-parser";
-import jwt from "jsonwebtoken"
-import { PassThrough } from "node:stream";
+import jwt, { type JwtPayload } from "jsonwebtoken"
 
 const app = express()
 const port = process.env.PORT || 5000;
@@ -49,10 +48,10 @@ const connectDB = async () => {
 
 const signToken = (user: any) => {
     return jwt.sign(
-        {email: user.email, name: user.name, photoURL: user.photoURL || ""},
+        { email: user.email, name: user.name, photoURL: user.photoURL || "" },
         SECRET,
-        {expiresIn: "7d"}
-        
+        { expiresIn: "7d" }
+
     )
 }
 
@@ -65,36 +64,70 @@ const setAuthCookie = (res: Response, token: any) => {
     })
 }
 
-const usersCol = db.collection("users")
+declare global {
+    namespace Express {
+        interface User {
+            _id: ObjectId
+            name: string
+            email: string
+        }
+        interface Request {
+            user?: User;
+        }
+    }
+}
 
-const reqireAuth = async(req: Request, res: Response, next: any) => {
+
+
+interface TokenPayload extends JwtPayload {
+    email: string;
+}
+
+interface UserDocument {
+    name: string
+    email: string
+    password?: string
+    photoURL?: string
+}
+
+const usersCol = db.collection<UserDocument>("users")
+
+const reqireAuth = async (req: Request, res: Response, next: any) => {
     try {
         const token = req.cookies?.twc_token || (req.headers.authorization || "").replace("Bearer", "")
 
-        if(!token) {
+        if (!token) {
             return res.status(401).json({
                 message: "Please login first"
-            })
-
-            const payload = jwt.verify(token, SECRET)
-            const user = await usersCol.findOne({email: payload.email}, {projection: {
-                password: 0
-            }})
-
-            if(!user) {
-                return res.status(401).json({
-                    Message: "Account not found"
-                })
-
-                req.user = user
-                next()
-            }
+            });
         }
-    }catch {
+
+        const payload = jwt.verify(token, SECRET) as TokenPayload;
+
+
+        const user = await usersCol.findOne(
+            { email: payload.email },
+            {
+                projection: {
+                    password: 0
+                }
+            }
+        )
+
+        if (!user) {
+            return res.status(401).json({
+                message: "Account not found"
+            });
+        }
+
+        req.user = user;
+        next();
+
+    } catch {
         return res.status(401).json(
             {
-            message: "Invalid or expired session. Plaease login again."
-        }
+                message: "Invalid or expired session. Plaease login again."
+            }
         )
     }
 }
@@ -102,7 +135,7 @@ app.get('/', (req: Request, res: Response) => {
     res.send('Simple CRUD Server is running')
 });
 
-app.listen(port, async() => {
+app.listen(port, async () => {
     await connectDB()
         .then(() => {
             console.log(`Simple CRUD Server is running on port: ${port}`)
