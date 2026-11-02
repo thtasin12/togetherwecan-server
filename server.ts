@@ -1401,6 +1401,266 @@ app.delete(
 )
 
 
+// USER BADGE CATALOG
+type UserCounts = {
+    joined: number
+    hosted: number
+    volunteersReached: number
+    saved: number
+    comments: number
+    communities: number
+    waitlisted: number
+}
+
+const badgeCatalog: {
+    id: string;
+    label: string;
+    description: string;
+    check: (counts: UserCounts) => boolean;
+}[] = [
+    {
+        id: "first-step",
+        label: "First Step",
+        description: "Joined your first event",
+        check: ({ joined }) => joined >= 1
+    },
+    {
+        id: "regular",
+        label: "Regular",
+        description: "Joined 3 community events",
+        check: ({ joined }) => joined >= 3
+    },
+    {
+        id: "changemaker",
+        label: "Changemaker",
+        description: "Joined 5 community events",
+        check: ({ joined }) => joined >= 5
+    },
+    {
+        id: "host",
+        label: "Host",
+        description: "Created your first event",
+        check: ({ hosted }) => hosted >= 1
+    },
+    {
+        id: "builder",
+        label: "Community Builder",
+        description: "Hosted 3 events",
+        check: ({ hosted }) => hosted >= 3
+    },
+    {
+        id: "crowd-puller",
+        label: "Crowd Puller",
+        description: "Reached 10 volunteers across your events",
+        check: ({ volunteersReached }) => volunteersReached >= 10
+    },
+    {
+        id: "curator",
+        label: "Curator",
+        description: "Saved 3 events for later",
+        check: ({ saved }) => saved >= 3
+    },
+    {
+        id: "voice",
+        label: "Community Voice",
+        description: "Shared 3 messages in event discussions",
+        check: ({ comments }) => comments >= 3
+    }
+]
+
+
+// GET USER STATS
+app.get(
+    "/api/users/stats",
+    reqireAuth,
+    async (req: Request, res: Response) => {
+        try {
+            const email = req.user!.email;
+            const now = new Date()
+
+            const [
+                hostedEvents,
+                joinedEvents,
+                saved,
+                comments,
+                recentPromotions
+            ] = await Promise.all([
+                events.find({
+                    createdByEmail: email
+                }).toArray(),
+
+                events.find({
+                    joinedBy: email
+                }).toArray(),
+
+                savesCol.countDocuments({
+                    userEmail: email
+                }),
+
+                commentsCol.countDocuments({
+                    userEmail: email
+                }),
+
+                data
+                    .find({
+                        userEmail: email,
+                        promotedAt: { $ne: null }
+                    })
+                    .sort({ promotedAt: -1 })
+                    .limit(5)
+                    .toArray()
+            ])
+
+            const volunteersReached = hostedEvents.reduce(
+                (total, event) => {
+                    return total + (event.joinedBy?.length || 0);
+                },
+                0
+            )
+
+            const communities = new Set(
+                [...hostedEvents, ...joinedEvents].map(
+                    event => event.location
+                )
+            ).size
+
+            const counts: UserCounts = {
+                hosted: hostedEvents.length,
+                joined: joinedEvents.length,
+                saved,
+                comments,
+                volunteersReached,
+                communities,
+                waitlisted: await waitlistCol.countDocuments({
+                    userEmail: email
+                })
+            }
+
+            const badges = badgeCatalog.map(
+                ({ check, ...badge }) => ({
+                    ...badge,
+                    earned: check(counts)
+                })
+            )
+
+            const promotionIds = recentPromotions
+                .map(join => String(join.eventId))
+                .filter(id => ObjectId.isValid(id))
+                .map(id => new ObjectId(id))
+
+            const promotionEvents = promotionIds.length
+                ? await events
+                    .find(
+                        {
+                            _id: { $in: promotionIds },
+                            date: { $gte: now }
+                        },
+                        {
+                            projection: {
+                                title: 1,
+                                date: 1,
+                                location: 1,
+                                thumbnail: 1,
+                                eventType: 1
+                            }
+                        }
+                    )
+                    .toArray()
+                : []
+
+            const eventMap = new Map(
+                promotionEvents.map(event => [
+                    String(event._id),
+                    event
+                ])
+            )
+
+            const promotions: {
+                event: any;
+                promotedAt: Date;
+            }[] = []
+
+            for (const join of recentPromotions) {
+                const event = eventMap.get(String(join.eventId));
+
+                if (event) {
+                    promotions.push({
+                        event,
+                        promotedAt: join.promotedAt
+                    })
+                }
+            }
+
+            res.json({
+                stats: {
+                    ...counts,
+                    badges
+                },
+                promotions
+            })
+
+        } catch (err: any) {
+            res.status(500).json({
+                message: err.message
+            })
+        }
+    }
+)
+
+
+// UPDATE OWN PROFILE
+app.put("/api/users/profile",
+    reqireAuth,
+    async (req: Request, res: Response) => {
+        try {
+            const { name, photoURL } = req.body;
+
+            if (
+                typeof name !== "string" ||
+                !name.trim() ||
+                (
+                    photoURL !== undefined &&
+                    typeof photoURL !== "string"
+                )
+            ) {
+                return res.status(400).json({
+                    message: "Valid name and photoURL are required"
+                })
+            }
+
+            await usersCol.updateOne(
+                { email: req.user!.email },
+                {
+                    $set: {
+                        name: name.trim(),
+                        photoURL: photoURL || ""
+                    }
+                }
+            )
+
+            const updated = await usersCol.findOne(
+                { email: req.user!.email },
+                {
+                    projection: {
+                        password: 0
+                    }
+                }
+            )
+
+            res.json({
+                user: updated
+            })
+
+        } catch (err: any) {
+            res.status(500).json({
+                message: err.message
+            })
+        }
+    }
+)
+
+
+
 // SERVER
 app.listen(port, async () => {
     try {
