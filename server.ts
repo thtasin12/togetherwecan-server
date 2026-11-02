@@ -8,7 +8,8 @@ import { MongoClient } from "mongodb";
 import "dotenv/config"
 import cors from "cors"
 import cookieParser from "cookie-parser";
-import { error } from "node:console";
+import jwt from "jsonwebtoken"
+import { PassThrough } from "node:stream";
 
 const app = express()
 const port = process.env.PORT || 5000;
@@ -33,6 +34,8 @@ const users = db.collection("user")
 const events = db.collection("event")
 const data = db.collection("data")
 
+const SECRET = process.env.JWT_SECRET || "together-we-can-jwt-secret"
+
 const connectDB = async () => {
     await client.connect()
 
@@ -44,6 +47,57 @@ const connectDB = async () => {
     console.log(`Database name ${db.databaseName}`)
 }
 
+const signToken = (user: any) => {
+    return jwt.sign(
+        {email: user.email, name: user.name, photoURL: user.photoURL || ""},
+        SECRET,
+        {expiresIn: "7d"}
+        
+    )
+}
+
+const setAuthCookie = (res: Response, token: any) => {
+    res.cookie("twc_token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    })
+}
+
+const usersCol = db.collection("users")
+
+const reqireAuth = async(req: Request, res: Response, next: any) => {
+    try {
+        const token = req.cookies?.twc_token || (req.headers.authorization || "").replace("Bearer", "")
+
+        if(!token) {
+            return res.status(401).json({
+                message: "Please login first"
+            })
+
+            const payload = jwt.verify(token, SECRET)
+            const user = await usersCol.findOne({email: payload.email}, {projection: {
+                password: 0
+            }})
+
+            if(!user) {
+                return res.status(401).json({
+                    Message: "Account not found"
+                })
+
+                req.user = user
+                next()
+            }
+        }
+    }catch {
+        return res.status(401).json(
+            {
+            message: "Invalid or expired session. Plaease login again."
+        }
+        )
+    }
+}
 app.get('/', (req: Request, res: Response) => {
     res.send('Simple CRUD Server is running')
 });
