@@ -1714,7 +1714,48 @@ app.get(
     }
 );
 
+// GET MY SAVED UPCOMING EVENTS
+app.get("/api/saves/my",
+    reqireAuth,
+    async (req: Request, res: Response) => {
+        try {
+            const saves = await savesCol
+                .find({ userEmail: req.user!.email })
+                .sort({ createdAt: -1 })
+                .toArray();
 
+            const ids = saves
+                .map((save) => {
+                    const id = String(save.eventId);
+
+                    return ObjectId.isValid(id)
+                        ? new ObjectId(id)
+                        : null;
+                })
+                .filter((id): id is ObjectId => id !== null);
+
+            if (!ids.length) {
+                return res.json({ events: [] });
+            }
+            const savedEvents = await events
+                .find({
+                    _id: { $in: ids },
+                    date: { $gte: new Date() }
+                })
+                .sort({ date: 1 })
+                .toArray();
+
+            res.json({
+                events: formatEvents(savedEvents, req.user!.email)
+            });
+
+        } catch (err: any) {
+            res.status(500).json({
+                message: err.message
+            });
+        }
+    }
+);
 
 // SERVER
 app.listen(port, async () => {
