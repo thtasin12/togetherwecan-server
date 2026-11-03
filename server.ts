@@ -1949,6 +1949,68 @@ app.post(
     }
 );
 
+
+// DELETE /api/comments/:id — delete own comment or moderate event
+app.delete("/api/comments/:id",
+    reqireAuth,
+    async (req: Request, res: Response) => {
+        try {
+            const id = String(req.params.id);
+
+            if (!ObjectId.isValid(id)) {
+                return res.status(404).json({
+                    message: "Comment not found"
+                });
+            }
+
+            const _id = new ObjectId(id);
+
+            // Find comment
+            const comment = await commentsCol.findOne({ _id });
+
+            if (!comment) {
+                return res.status(404).json({
+                    message: "Comment not found"
+                });
+            }
+
+            // Find related event
+            const eventId = String(comment.eventId);
+
+            const event = ObjectId.isValid(eventId)
+                ? await events.findOne(
+                    { _id: new ObjectId(eventId) },
+                    { projection: { createdByEmail: 1 } }
+                )
+                : null;
+
+            // Check permission
+            const isAuthor = comment.userEmail === req.user!.email;
+
+            const isEventOwner =
+                event?.createdByEmail === req.user!.email;
+
+            if (!isAuthor && !isEventOwner) {
+                return res.status(403).json({
+                    message: "You cannot delete this comment"
+                });
+            }
+
+            // Delete comment
+            await commentsCol.deleteOne({ _id });
+
+            res.json({
+                message: "Comment deleted"
+            });
+
+        } catch (err: any) {
+            res.status(500).json({
+                message: err.message
+            });
+        }
+    }
+);
+
 // SERVER
 app.listen(port, async () => {
     try {
