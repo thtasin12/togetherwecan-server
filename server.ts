@@ -1868,6 +1868,87 @@ app.get(
     }
 );
 
+const messagesCol = db.collection("messages");
+
+// POST /api/contact — public contact form
+const COOLDOWN_MS = 60_000;
+
+app.post(
+    "/api/contact",
+    optionalAuth,
+    async (req: Request, res: Response) => {
+        try {
+            // Honeypot check
+            if (
+                typeof req.body?.website === "string" &&
+                req.body.website.trim()
+            ) {
+                return res.status(201).json({
+                    message: "Thanks for reaching out. We'll get back to you soon."
+                });
+            }
+
+            const { name, email, topic, subject, message } = req.body;
+
+            // Basic validation
+            if (
+                !name?.trim() ||
+                !email?.trim() ||
+                !topic?.trim() ||
+                !subject?.trim() ||
+                !message?.trim()
+            ) {
+                return res.status(400).json({
+                    message: "Please provide all required information"
+                });
+            }
+
+            const normalizedEmail = email.trim().toLowerCase();
+
+            // Check recent message
+            const recent = await messagesCol.findOne(
+                {
+                    email: normalizedEmail,
+                    createdAt: {
+                        $gte: new Date(Date.now() - COOLDOWN_MS)
+                    }
+                },
+                {
+                    projection: { _id: 1 }
+                }
+            );
+
+            if (recent) {
+                return res.status(429).json({
+                    message: "We just received your message. Please wait a minute before sending another."
+                });
+            }
+
+            // Store message
+            const { insertedId } = await messagesCol.insertOne({
+                name: name.trim(),
+                email: normalizedEmail,
+                topic: topic.trim(),
+                subject: subject.trim(),
+                message: message.trim(),
+                userEmail: req.user?.email || null,
+                status: "new",
+                createdAt: new Date()
+            });
+
+            res.status(201).json({
+                message: "Thanks for reaching out. We'll get back to you soon.",
+                reference: `TWC-${insertedId.toString().slice(-6).toUpperCase()}`
+            });
+
+        } catch (err: any) {
+            res.status(500).json({
+                message: err.message
+            });
+        }
+    }
+);
+
 // SERVER
 app.listen(port, async () => {
     try {
