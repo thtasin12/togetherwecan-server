@@ -1470,8 +1470,7 @@ const badgeCatalog: {
 
 
 // GET USER STATS
-app.get(
-    "/api/users/stats",
+app.get("/api/users/stats",
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
@@ -1658,6 +1657,62 @@ app.put("/api/users/profile",
         }
     }
 )
+
+// GET PUBLIC COMMUNITY STATS
+app.get(
+    "/api/stats",
+    async (req: Request, res: Response) => {
+        try {
+            const now = new Date();
+
+            const weekFromNow = new Date(
+                now.getTime() + 7 * 24 * 60 * 60 * 1000
+            );
+
+            const [
+                eventsCount,
+                thisWeek,
+                volunteerEmails,
+                joins,
+                locations
+            ] = await Promise.all([
+                events.countDocuments({
+                    date: { $gte: now }
+                }),
+
+                events.countDocuments({
+                    date: {
+                        $gte: now,
+                        $lte: weekFromNow
+                    }
+                }),
+
+                data.distinct("userEmail"),
+
+                data.countDocuments({}),
+
+                events.distinct("location", {
+                    date: { $gte: now }
+                })
+            ]);
+
+            res.json({
+                stats: {
+                    events: eventsCount,
+                    thisWeek,
+                    volunteers: volunteerEmails.length,
+                    joins,
+                    communities: locations.length
+                }
+            });
+
+        } catch (err: any) {
+            res.status(500).json({
+                message: err.message
+            });
+        }
+    }
+);
 
 
 
