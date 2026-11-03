@@ -1805,6 +1805,43 @@ app.get(
     }
 )
 
+// GET /api/joins/my — joined upcoming events sorted by event date
+app.get("/api/joins/my",
+    reqireAuth,
+    async (req: Request, res: Response) => {
+        try {
+            const joins = await data
+                .find({ userEmail: req.user!.email })
+                .toArray();
+
+            const eventIds = joins
+                .filter((join) => ObjectId.isValid(String(join.eventId)))
+                .map((join) => new ObjectId(String(join.eventId)));
+
+            if (!eventIds.length) {
+                return res.json({ events: [] });
+            }
+
+            const joinedEvents = await events
+                .find({
+                    _id: { $in: eventIds },
+                    date: { $gte: new Date() }
+                })
+                .sort({ date: 1 })
+                .toArray();
+
+            res.json({
+                events: formatEvents(joinedEvents, req.user!.email)
+            });
+
+        } catch (err: any) {
+            res.status(500).json({
+                message: err.message
+            });
+        }
+    }
+);
+
 // SERVER
 app.listen(port, async () => {
     try {
