@@ -1,67 +1,72 @@
-
 import express, {
     type Request,
     type Response
 } from "express";
 
-import {SignJWT, jwtVerify, createRemoteJWKSet} from "jose"
+import {
+    SignJWT,
+    jwtVerify,
+    createRemoteJWKSet
+} from "jose";
 
-import { MongoClient, ObjectId } from "mongodb"
-import "dotenv/config"
-import cors from "cors"
-import cookieParser from "cookie-parser"
+import { MongoClient, ObjectId } from "mongodb";
+import "dotenv/config";
+import cors from "cors";
+import cookieParser from "cookie-parser";
 
-const app = express()
-const port = process.env.PORT || 5000
+
+const app = express();
+const port = Number(process.env.PORT) || 5000;
 
 
 // MIDDLEWARE
 app.use(cors({
     origin: process.env.CLIENT_URL || "http://localhost:3000",
     credentials: true
-}))
+}));
 
-app.use(express.json())
-app.use(cookieParser())
+app.use(express.json());
+app.use(cookieParser());
 
 
 // DATABASE
-const uri = process.env.MONGODB_URI
+const uri = process.env.MONGODB_URI;
 
 if (!uri) {
-    throw new Error("MONGODB_URI is not defined in .env")
+    throw new Error("MONGODB_URI is not defined in .env");
 }
 
-const client = new MongoClient(uri)
-const db = client.db(process.env.DB_NAME)
+const client = new MongoClient(uri);
+const db = client.db(process.env.DB_NAME);
 
-const usersCol = db.collection("user")
-const events = db.collection("event")
-const data = db.collection("data")
+const usersCol = db.collection("user");
+const events = db.collection("event");
+const data = db.collection("data");
 
-const commentsCol = db.collection("comments")
-const savesCol = db.collection("saves")
-const waitlistCol = db.collection("waitlist")
+const commentsCol = db.collection("comments");
+const savesCol = db.collection("saves");
+const waitlistCol = db.collection("waitlist");
+const messagesCol = db.collection("messages");
 
 
 // DATABASE CONNECTION
 const connectDB = async () => {
-    await client.connect()
+    await client.connect();
 
     await usersCol.createIndex(
         { email: 1 },
         { unique: true }
-    )
+    );
 
-    await events.createIndex({ date: 1 })
-    await events.createIndex({ createdByEmail: 1 })
+    await events.createIndex({ date: 1 });
+    await events.createIndex({ createdByEmail: 1 });
 
     await data.createIndex(
         { eventId: 1, userEmail: 1 },
         { unique: true }
     );
 
-    await commentsCol.createIndex({ eventId: 1 })
+    await commentsCol.createIndex({ eventId: 1 });
 
     await savesCol.createIndex(
         { eventId: 1, userEmail: 1 },
@@ -78,7 +83,7 @@ const connectDB = async () => {
         joinedAt: 1
     });
 
-    console.log(`Database name: ${db.databaseName}`)
+    console.log(`Database name: ${db.databaseName}`);
 };
 
 
@@ -89,10 +94,10 @@ const SECRET = new TextEncoder().encode(
 
 
 const signToken = async (user: {
-    _id: ObjectId
-    email: string
-    name: string
-    photoURL?: string
+    _id: ObjectId;
+    email: string;
+    name: string;
+    photoURL?: string;
 }) => {
     return await new SignJWT({
         email: user.email,
@@ -103,7 +108,7 @@ const signToken = async (user: {
         .setSubject(user._id.toString())
         .setIssuedAt()
         .setExpirationTime("7d")
-        .sign(SECRET)
+        .sign(SECRET);
 };
 
 
@@ -116,8 +121,8 @@ const setAuthCookie = (res: Response, token: string) => {
             ? "none"
             : "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000
-    })
-}
+    });
+};
 
 
 // USER TYPE
@@ -125,10 +130,10 @@ declare global {
     namespace Express {
         interface Request {
             user?: {
-                _id: ObjectId
-                name: string
-                email: string
-                photoURL?: string
+                _id: ObjectId;
+                name: string;
+                email: string;
+                photoURL?: string;
             };
         }
     }
@@ -136,7 +141,11 @@ declare global {
 
 
 // AUTH MIDDLEWARE
-const reqireAuth = async (req: Request, res: Response, next: any) => {
+const reqireAuth = async (
+    req: Request,
+    res: Response,
+    next: any
+) => {
     try {
         const token =
             req.cookies?.twc_token ||
@@ -145,15 +154,15 @@ const reqireAuth = async (req: Request, res: Response, next: any) => {
         if (!token) {
             return res.status(401).json({
                 message: "Please login first"
-            })
+            });
         }
 
-        const { payload } = await jwtVerify(token, SECRET)
+        const { payload } = await jwtVerify(token, SECRET);
 
         if (typeof payload.email !== "string") {
             return res.status(401).json({
                 message: "Invalid token"
-            })
+            });
         }
 
         const user = await usersCol.findOne(
@@ -163,12 +172,12 @@ const reqireAuth = async (req: Request, res: Response, next: any) => {
                     password: 0
                 }
             }
-        )
+        );
 
         if (!user) {
             return res.status(401).json({
                 message: "Account not found"
-            })
+            });
         }
 
         req.user = {
@@ -176,31 +185,34 @@ const reqireAuth = async (req: Request, res: Response, next: any) => {
             name: user.name,
             email: user.email,
             photoURL: user.photoURL
-        }
+        };
 
-        next()
+        next();
 
     } catch {
         return res.status(401).json({
             message: "Invalid or expired session. Please login again"
-        })
+        });
     }
 };
 
 
 // OPTIONAL AUTH
 const optionalAuth = async (
-    req: Request, res: Response, next: any) => {
+    req: Request,
+    res: Response,
+    next: any
+) => {
     try {
         const token =
             req.cookies?.twc_token ||
             req.headers.authorization?.replace(/^Bearer\s+/i, "");
 
         if (!token) {
-            return next()
+            return next();
         }
 
-        const { payload } = await jwtVerify(token, SECRET)
+        const { payload } = await jwtVerify(token, SECRET);
 
         if (typeof payload.email !== "string") {
             return next();
@@ -213,7 +225,7 @@ const optionalAuth = async (
                     password: 0
                 }
             }
-        )
+        );
 
         if (user) {
             req.user = {
@@ -224,10 +236,10 @@ const optionalAuth = async (
             };
         }
 
-        next()
+        next();
 
     } catch {
-        next()
+        next();
     }
 };
 
@@ -240,9 +252,11 @@ const googleJWKS = createRemoteJWKSet(
 
 // EVENT RESPONSE HELPER
 const formatEvent = async (
-    event: any, email?: string) => {
-    let isJoined = false
-    let isSaved = false
+    event: any,
+    email?: string
+) => {
+    let isJoined = false;
+    let isSaved = false;
 
     if (email) {
         isJoined = (event.joinedBy || []).includes(email);
@@ -252,7 +266,7 @@ const formatEvent = async (
             userEmail: email
         });
 
-        isSaved = Boolean(saved)
+        isSaved = Boolean(saved);
     }
 
     return {
@@ -270,14 +284,14 @@ const formatEvents = async (
 ) => {
     return await Promise.all(
         eventList.map(event => formatEvent(event, email))
-    )
-}
+    );
+};
 
 
 // HOME
 app.get("/", (req: Request, res: Response) => {
-    res.send("Simple CRUD Server is running")
-})
+    res.send("Simple CRUD Server is running");
+});
 
 
 // REGISTER
@@ -285,37 +299,41 @@ app.post(
     "/api/auth/register",
     async (req: Request, res: Response) => {
         try {
-            const { name, email, password, photoURL } = req.body
+            const { name, email, password, photoURL } = req.body;
 
             if (!name || !email || !password) {
                 return res.status(400).json({
                     message: "Name, email and password are required"
-                })
+                });
             }
 
-            const existing = await usersCol.findOne({ email })
+            const normalizedEmail = String(email).trim().toLowerCase();
+
+            const existing = await usersCol.findOne({
+                email: normalizedEmail
+            });
 
             if (existing) {
                 return res.status(409).json({
                     message: "An account with this email already exists"
-                })
+                });
             }
 
             const newUser = {
-                name,
-                email,
+                name: String(name).trim(),
+                email: normalizedEmail,
                 password,
                 photoURL: photoURL || "",
                 provider: "email",
                 createdAt: new Date()
-            }
+            };
 
             const { insertedId } = await usersCol.insertOne(newUser);
 
             const user = {
                 ...newUser,
                 _id: insertedId
-            }
+            };
 
             const token = await signToken(user);
 
@@ -328,14 +346,14 @@ app.post(
                     email: user.email,
                     photoURL: user.photoURL
                 }
-            })
+            });
 
         } catch (err) {
             console.log(err);
 
             res.status(500).json({
                 message: "Registration failed"
-            })
+            });
         }
     }
 );
@@ -346,14 +364,20 @@ app.post(
     "/api/auth/login",
     async (req: Request, res: Response) => {
         try {
-            const { email, password } = req.body
+            const { email, password } = req.body;
 
-            const user = await usersCol.findOne({ email })
+            const normalizedEmail = String(email || "")
+                .trim()
+                .toLowerCase();
+
+            const user = await usersCol.findOne({
+                email: normalizedEmail
+            });
 
             if (!user || !user.password || user.password !== password) {
                 return res.status(401).json({
                     message: "Invalid email or password"
-                })
+                });
             }
 
             const token = await signToken({
@@ -361,9 +385,9 @@ app.post(
                 name: user.name,
                 email: user.email,
                 photoURL: user.photoURL
-            })
+            });
 
-            setAuthCookie(res, token)
+            setAuthCookie(res, token);
 
             res.json({
                 user: {
@@ -372,14 +396,14 @@ app.post(
                     email: user.email,
                     photoURL: user.photoURL || ""
                 }
-            })
+            });
 
         } catch (err) {
-            console.log(err)
+            console.log(err);
 
             res.status(500).json({
                 message: "Login failed"
-            })
+            });
         }
     }
 );
@@ -395,7 +419,7 @@ app.post(
             if (!GOOGLE_CLIENT_ID) {
                 return res.status(500).json({
                     message: "Google login is not configured"
-                })
+                });
             }
 
             const credential = req.body.credential;
@@ -403,7 +427,7 @@ app.post(
             if (typeof credential !== "string") {
                 return res.status(400).json({
                     message: "Google credential is required"
-                })
+                });
             }
 
             const { payload } = await jwtVerify(
@@ -416,7 +440,7 @@ app.post(
                     ],
                     audience: GOOGLE_CLIENT_ID
                 }
-            )
+            );
 
             const email = payload.email;
 
@@ -426,7 +450,7 @@ app.post(
             ) {
                 return res.status(400).json({
                     message: "Could not verify Google account"
-                })
+                });
             }
 
             let user = await usersCol.findOne({ email });
@@ -460,9 +484,9 @@ app.post(
                 name: user.name,
                 email: user.email,
                 photoURL: user.photoURL
-            })
+            });
 
-            setAuthCookie(res, token)
+            setAuthCookie(res, token);
 
             res.json({
                 user: {
@@ -471,7 +495,7 @@ app.post(
                     email: user.email,
                     photoURL: user.photoURL || ""
                 }
-            })
+            });
 
         } catch (err) {
             console.log(err);
@@ -546,10 +570,10 @@ app.get(
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // GET RECENT 6 EVENTS
@@ -594,14 +618,14 @@ app.get(
                     createdByEmail: req.user!.email
                 })
                 .sort({ date: 1 })
-                .toArray()
+                .toArray();
 
             res.json({
                 events: await formatEvents(
                     eventList,
                     req.user!.email
                 )
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
@@ -617,27 +641,29 @@ app.get(
     "/api/events/:id/attendees",
     async (req: Request, res: Response) => {
         try {
-            if (!ObjectId.isValid(String(req.params.id))) {
+            const id = String(req.params.id);
+
+            if (!ObjectId.isValid(id)) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
             const event = await events.findOne(
-                { _id: new ObjectId(String(req.params.id)) },
+                { _id: new ObjectId(id) },
                 { projection: { joinedBy: 1 } }
-            )
+            );
 
             if (!event) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
-            const emails = event.joinedBy || []
+            const emails = event.joinedBy || [];
 
             if (!emails.length) {
-                return res.json({ attendees: [] })
+                return res.json({ attendees: [] });
             }
 
             const [users, joins] = await Promise.all([
@@ -654,7 +680,7 @@ app.get(
                 ).toArray(),
 
                 data.find({
-                    eventId: req.params.id,
+                    eventId: id,
                     userEmail: { $in: emails }
                 }).toArray()
             ]);
@@ -663,32 +689,32 @@ app.get(
                 .map((email: string) => {
                     const user = users.find(
                         item => item.email === email
-                    )
+                    );
 
                     if (!user) return null;
 
                     const join = joins.find(
                         item => item.userEmail === email
-                    )
+                    );
 
                     return {
                         email,
                         name: user.name,
                         photoURL: user.photoURL || "",
                         joinedAt: join?.joinedAt || null
-                    }
+                    };
                 })
-                .filter(Boolean)
+                .filter(Boolean);
 
-            res.json({ attendees })
+            res.json({ attendees });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // GET EVENT COMMENTS
@@ -696,15 +722,18 @@ app.get(
     "/api/events/:id/comments",
     async (req: Request, res: Response) => {
         try {
-            if (!ObjectId.isValid(String(req.params.id))) {
+            const id = String(req.params.id);
+
+            if (!ObjectId.isValid(id)) {
                 return res.status(404).json({
                     message: "Event not found"
                 });
             }
 
-            const event = await events.findOne({
-                _id: new ObjectId(String(req.params.id))
-            });
+            const event = await events.findOne(
+                { _id: new ObjectId(id) },
+                { projection: { _id: 1 } }
+            );
 
             if (!event) {
                 return res.status(404).json({
@@ -713,7 +742,7 @@ app.get(
             }
 
             const comments = await commentsCol
-                .find({ eventId: req.params.id })
+                .find({ eventId: id })
                 .sort({ createdAt: -1 })
                 .limit(100)
                 .toArray();
@@ -735,20 +764,22 @@ app.get(
     optionalAuth,
     async (req: Request, res: Response) => {
         try {
-            if (!ObjectId.isValid(String(req.params.id))) {
+            const id = String(req.params.id);
+
+            if (!ObjectId.isValid(id)) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
             const event = await events.findOne({
-                _id: new ObjectId(String(req.params.id))
-            })
+                _id: new ObjectId(id)
+            });
 
             if (!event) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
             res.json({
@@ -756,15 +787,16 @@ app.get(
                     event,
                     req.user?.email
                 )
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
 );
+
 
 // CREATE EVENT
 app.post(
@@ -786,7 +818,7 @@ app.post(
             ) {
                 return res.status(400).json({
                     message: "Title and valid date are required"
-                })
+                });
             }
 
             const doc = {
@@ -803,7 +835,7 @@ app.post(
 
                 joinedBy: [],
                 createdAt: new Date()
-            }
+            };
 
             const { insertedId } = await events.insertOne(doc);
 
@@ -812,15 +844,15 @@ app.post(
                     { ...doc, _id: insertedId },
                     req.user!.email
                 )
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // POST COMMENT
@@ -829,15 +861,17 @@ app.post(
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
-            if (!ObjectId.isValid(String(req.params.id))) {
+            const id = String(req.params.id);
+
+            if (!ObjectId.isValid(id)) {
                 return res.status(404).json({
                     message: "Event not found"
                 });
             }
 
             const event = await events.findOne({
-                _id: new ObjectId(String(req.params.id))
-            })
+                _id: new ObjectId(id)
+            });
 
             if (!event) {
                 return res.status(404).json({
@@ -847,20 +881,20 @@ app.post(
 
             const { body } = req.body;
 
-            if (!body || typeof body !== "string") {
+            if (!body || typeof body !== "string" || !body.trim()) {
                 return res.status(400).json({
                     message: "Comment is required"
                 });
             }
 
             const comment = {
-                eventId: req.params.id,
+                eventId: id,
                 userEmail: req.user!.email,
                 authorName: req.user!.name,
                 authorPhoto: req.user!.photoURL || "",
-                body,
+                body: body.trim(),
                 createdAt: new Date()
-            }
+            };
 
             const { insertedId } = await commentsCol.insertOne(comment);
 
@@ -869,15 +903,15 @@ app.post(
                     ...comment,
                     _id: insertedId
                 }
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // JOIN EVENT
@@ -886,26 +920,28 @@ app.post(
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
-            if (!ObjectId.isValid(String(req.params.id))) {
+            const id = String(req.params.id);
+
+            if (!ObjectId.isValid(id)) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
             const event = await events.findOne({
-                _id: new ObjectId(String(req.params.id))
-            })
+                _id: new ObjectId(id)
+            });
 
             if (!event) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
             if (event.date < new Date()) {
                 return res.status(400).json({
                     message: "This event has already ended"
-                })
+                });
             }
 
             const joinedBy = event.joinedBy || [];
@@ -914,7 +950,7 @@ app.post(
             if (joinedBy.includes(email)) {
                 return res.status(409).json({
                     message: "You have already joined this event"
-                })
+                });
             }
 
             const capacity = event.capacity ?? null;
@@ -923,13 +959,13 @@ app.post(
                 return res.status(409).json({
                     message: "This event is full. Join the waitlist.",
                     full: true
-                })
+                });
             }
 
             const filter: any = {
-                _id: new ObjectId(String(req.params.id)),
+                _id: new ObjectId(id),
                 joinedBy: { $ne: email }
-            }
+            };
 
             if (capacity) {
                 filter.$expr = {
@@ -941,7 +977,7 @@ app.post(
                         },
                         capacity
                     ]
-                }
+                };
             }
 
             const result = await events.updateOne(
@@ -951,46 +987,47 @@ app.post(
                         joinedBy: email
                     }
                 }
-            )
+            );
 
             if (result.modifiedCount === 0) {
                 return res.status(409).json({
                     message: "This event is full or you already joined",
                     full: true
-                })
+                });
             }
 
             await data.updateOne(
                 {
-                    eventId: req.params.id,
+                    eventId: id,
                     userEmail: email
                 },
                 {
                     $set: {
-                        eventId: req.params.id,
+                        eventId: id,
                         userEmail: email,
                         joinedAt: new Date(),
                         promotedAt: null
                     }
                 },
                 { upsert: true }
-            )
+            );
 
             await waitlistCol.deleteOne({
-                eventId: req.params.id,
+                eventId: id,
                 userEmail: email
-            })
+            });
 
             res.status(201).json({
                 message: "Joined the event successfully"
-            })
+            });
+
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // JOIN WAITLIST
@@ -999,75 +1036,77 @@ app.post(
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
-            if (!ObjectId.isValid(String(req.params.id))) {
+            const id = String(req.params.id);
+
+            if (!ObjectId.isValid(id)) {
                 return res.status(404).json({
                     message: "Event not found"
                 });
             }
 
             const event = await events.findOne({
-                _id: new ObjectId(String(req.params.id))
+                _id: new ObjectId(id)
             });
 
             if (!event) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
             if (event.date < new Date()) {
                 return res.status(400).json({
                     message: "This event has already ended"
-                })
+                });
             }
 
-            const email = req.user!.email
-            const joinedBy = event.joinedBy || []
-            const capacity = event.capacity ?? null
+            const email = req.user!.email;
+            const joinedBy = event.joinedBy || [];
+            const capacity = event.capacity ?? null;
 
             if (joinedBy.includes(email)) {
                 return res.status(409).json({
                     message: "You have already joined this event"
-                })
+                });
             }
 
             if (!capacity || joinedBy.length < capacity) {
                 return res.status(400).json({
                     message: "Spots are available. Join the event instead."
-                })
+                });
             }
 
             await waitlistCol.updateOne(
                 {
-                    eventId: req.params.id,
+                    eventId: id,
                     userEmail: email
                 },
                 {
                     $setOnInsert: {
-                        eventId: req.params.id,
+                        eventId: id,
                         userEmail: email,
                         joinedAt: new Date()
                     }
                 },
                 { upsert: true }
-            )
+            );
 
             const waitlistCount = await waitlistCol.countDocuments({
-                eventId: req.params.id
-            })
+                eventId: id
+            });
 
             res.status(201).json({
                 message: "You are on the waitlist.",
                 waitlistCount
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // SAVE EVENT
@@ -1076,46 +1115,48 @@ app.post(
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
-            if (!ObjectId.isValid(String(req.params.id))) {
+            const id = String(req.params.id);
+
+            if (!ObjectId.isValid(id)) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
             const event = await events.findOne({
-                _id: new ObjectId(String(req.params.id))
-            })
+                _id: new ObjectId(id)
+            });
 
             if (!event) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
             await savesCol.updateOne(
                 {
-                    eventId: req.params.id,
+                    eventId: id,
                     userEmail: req.user!.email
                 },
                 {
                     $setOnInsert: {
-                        eventId: req.params.id,
+                        eventId: id,
                         userEmail: req.user!.email,
                         createdAt: new Date()
                     }
                 },
                 { upsert: true }
-            )
+            );
 
-            res.json({ saved: true })
+            res.json({ saved: true });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // UPDATE OWN EVENT
@@ -1124,21 +1165,23 @@ app.put(
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
-            if (!ObjectId.isValid(String(req.params.id))) {
+            const id = String(req.params.id);
+
+            if (!ObjectId.isValid(id)) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
             const event = await events.findOne({
-                _id: new ObjectId(String(req.params.id)),
+                _id: new ObjectId(id),
                 createdByEmail: req.user!.email
-            })
+            });
 
             if (!event) {
                 return res.status(404).json({
                     message: "Event not found or you don't have permission"
-                })
+                });
             }
 
             const { title, date, capacity } = req.body;
@@ -1155,15 +1198,24 @@ app.put(
 
             const joinedCount = event.joinedBy?.length || 0;
 
-            if (capacity && joinedCount > capacity) {
+            if (
+                capacity !== null &&
+                capacity !== undefined &&
+                capacity !== "" &&
+                (
+                    typeof capacity !== "number" ||
+                    capacity < 1 ||
+                    joinedCount > capacity
+                )
+            ) {
                 return res.status(400).json({
                     message: `Capacity cannot be lower than ${joinedCount}`
-                })
+                });
             }
 
             await events.updateOne(
                 {
-                    _id: new ObjectId(String(req.params.id)),
+                    _id: new ObjectId(id),
                     createdByEmail: req.user!.email
                 },
                 {
@@ -1173,19 +1225,19 @@ app.put(
                         date: new Date(date)
                     }
                 }
-            )
+            );
 
             res.json({
                 message: "Event updated successfully"
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // DELETE OWN EVENT
@@ -1194,121 +1246,112 @@ app.delete(
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
-            if (!ObjectId.isValid(String(req.params.id))) {
+            const id = String(req.params.id);
+
+            if (!ObjectId.isValid(id)) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
             const result = await events.deleteOne({
-                _id: new ObjectId(String(req.params.id)),
+                _id: new ObjectId(id),
                 createdByEmail: req.user!.email
-            })
+            });
 
             if (result.deletedCount === 0) {
                 return res.status(404).json({
                     message: "Event not found or you don't have permission"
-                })
+                });
             }
 
             await Promise.all([
-                data.deleteMany({
-                    eventId: req.params.id
-                }),
-
-                savesCol.deleteMany({
-                    eventId: req.params.id
-                }),
-
-                waitlistCol.deleteMany({
-                    eventId: req.params.id
-                }),
-
-                commentsCol.deleteMany({
-                    eventId: req.params.id
-                })
-            ])
+                data.deleteMany({ eventId: id }),
+                savesCol.deleteMany({ eventId: id }),
+                waitlistCol.deleteMany({ eventId: id }),
+                commentsCol.deleteMany({ eventId: id })
+            ]);
 
             res.json({
                 message: "Event deleted successfully"
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // LEAVE EVENT + PROMOTE WAITLIST USER
-
 app.delete(
     "/api/events/:id/join",
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
-            if (!ObjectId.isValid(String(req.params.id))) {
+            const id = String(req.params.id);
+
+            if (!ObjectId.isValid(id)) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
+            const eventId = new ObjectId(id);
+
             const event = await events.findOne({
-                _id: new ObjectId(String(req.params.id))
-            })
+                _id: eventId
+            });
 
             if (!event) {
                 return res.status(404).json({
                     message: "Event not found"
-                })
+                });
             }
 
-            const email = req.user!.email
+            const email = req.user!.email;
 
             if (!event.joinedBy?.includes(email)) {
                 return res.status(400).json({
                     message: "You have not joined this event"
-                })
+                });
             }
-
-            const eventId = new ObjectId(String(req.params.id))
-            const userEmail = req.user!.email
 
             await events.updateOne(
                 { _id: eventId },
                 {
                     $pull: {
-                        joinedBy: userEmail as never
+                        joinedBy: email as never
                     }
                 }
-            )
+            );
 
             await data.deleteOne({
-                eventId: req.params.id,
+                eventId: id,
                 userEmail: email
-            })
+            });
 
             let promoted = false;
 
             const nextUsers = await waitlistCol
-                .find({ eventId: req.params.id })
+                .find({ eventId: id })
                 .sort({ joinedAt: 1 })
                 .limit(1)
-                .toArray()
+                .toArray();
 
-            const nextUser = nextUsers[0]
+            const nextUser = nextUsers[0];
 
             if (nextUser) {
                 await waitlistCol.deleteOne({
-                    eventId: req.params.id,
+                    eventId: id,
                     userEmail: nextUser.userEmail
-                })
+                });
 
                 const added = await events.updateOne(
                     {
-                        _id: new ObjectId(String(req.params.id)),
+                        _id: eventId,
                         joinedBy: { $ne: nextUser.userEmail }
                     },
                     {
@@ -1316,24 +1359,24 @@ app.delete(
                             joinedBy: nextUser.userEmail
                         }
                     }
-                )
+                );
 
                 if (added.modifiedCount > 0) {
                     await data.updateOne(
                         {
-                            eventId: req.params.id,
+                            eventId: id,
                             userEmail: nextUser.userEmail
                         },
                         {
                             $set: {
-                                eventId: req.params.id,
+                                eventId: id,
                                 userEmail: nextUser.userEmail,
                                 joinedAt: new Date(),
                                 promotedAt: new Date()
                             }
                         },
                         { upsert: true }
-                    )
+                    );
 
                     promoted = true;
                 }
@@ -1342,15 +1385,15 @@ app.delete(
             res.json({
                 message: "You have left the event",
                 promoted
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // LEAVE WAITLIST
@@ -1360,21 +1403,21 @@ app.delete(
     async (req: Request, res: Response) => {
         try {
             await waitlistCol.deleteOne({
-                eventId: req.params.id,
+                eventId: String(req.params.id),
                 userEmail: req.user!.email
-            })
+            });
 
             res.json({
                 message: "You have left the waitlist"
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // UNSAVE EVENT
@@ -1384,33 +1427,34 @@ app.delete(
     async (req: Request, res: Response) => {
         try {
             await savesCol.deleteOne({
-                eventId: req.params.id,
+                eventId: String(req.params.id),
                 userEmail: req.user!.email
-            })
+            });
 
             res.json({
                 saved: false
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // USER BADGE CATALOG
 type UserCounts = {
-    joined: number
-    hosted: number
-    volunteersReached: number
-    saved: number
-    comments: number
-    communities: number
-    waitlisted: number
-}
+    joined: number;
+    hosted: number;
+    volunteersReached: number;
+    saved: number;
+    comments: number;
+    communities: number;
+    waitlisted: number;
+};
+
 
 const badgeCatalog: {
     id: string;
@@ -1466,16 +1510,17 @@ const badgeCatalog: {
         description: "Shared 3 messages in event discussions",
         check: ({ comments }) => comments >= 3
     }
-]
+];
 
 
 // GET USER STATS
-app.get("/api/users/stats",
+app.get(
+    "/api/users/stats",
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
             const email = req.user!.email;
-            const now = new Date()
+            const now = new Date();
 
             const [
                 hostedEvents,
@@ -1508,20 +1553,20 @@ app.get("/api/users/stats",
                     .sort({ promotedAt: -1 })
                     .limit(5)
                     .toArray()
-            ])
+            ]);
 
             const volunteersReached = hostedEvents.reduce(
                 (total, event) => {
                     return total + (event.joinedBy?.length || 0);
                 },
                 0
-            )
+            );
 
             const communities = new Set(
                 [...hostedEvents, ...joinedEvents].map(
                     event => event.location
                 )
-            ).size
+            ).size;
 
             const counts: UserCounts = {
                 hosted: hostedEvents.length,
@@ -1533,19 +1578,19 @@ app.get("/api/users/stats",
                 waitlisted: await waitlistCol.countDocuments({
                     userEmail: email
                 })
-            }
+            };
 
             const badges = badgeCatalog.map(
                 ({ check, ...badge }) => ({
                     ...badge,
                     earned: check(counts)
                 })
-            )
+            );
 
             const promotionIds = recentPromotions
                 .map(join => String(join.eventId))
                 .filter(id => ObjectId.isValid(id))
-                .map(id => new ObjectId(id))
+                .map(id => new ObjectId(id));
 
             const promotionEvents = promotionIds.length
                 ? await events
@@ -1565,19 +1610,19 @@ app.get("/api/users/stats",
                         }
                     )
                     .toArray()
-                : []
+                : [];
 
             const eventMap = new Map(
                 promotionEvents.map(event => [
                     String(event._id),
                     event
                 ])
-            )
+            );
 
             const promotions: {
                 event: any;
                 promotedAt: Date;
-            }[] = []
+            }[] = [];
 
             for (const join of recentPromotions) {
                 const event = eventMap.get(String(join.eventId));
@@ -1586,7 +1631,7 @@ app.get("/api/users/stats",
                     promotions.push({
                         event,
                         promotedAt: join.promotedAt
-                    })
+                    });
                 }
             }
 
@@ -1596,19 +1641,20 @@ app.get("/api/users/stats",
                     badges
                 },
                 promotions
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
 
 
 // UPDATE OWN PROFILE
-app.put("/api/users/profile",
+app.put(
+    "/api/users/profile",
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
@@ -1624,7 +1670,7 @@ app.put("/api/users/profile",
             ) {
                 return res.status(400).json({
                     message: "Valid name and photoURL are required"
-                })
+                });
             }
 
             await usersCol.updateOne(
@@ -1635,7 +1681,7 @@ app.put("/api/users/profile",
                         photoURL: photoURL || ""
                     }
                 }
-            )
+            );
 
             const updated = await usersCol.findOne(
                 { email: req.user!.email },
@@ -1644,19 +1690,20 @@ app.put("/api/users/profile",
                         password: 0
                     }
                 }
-            )
+            );
 
             res.json({
                 user: updated
-            })
+            });
 
         } catch (err: any) {
             res.status(500).json({
                 message: err.message
-            })
+            });
         }
     }
-)
+);
+
 
 // GET PUBLIC COMMUNITY STATS
 app.get(
@@ -1714,8 +1761,10 @@ app.get(
     }
 );
 
+
 // GET MY SAVED UPCOMING EVENTS
-app.get("/api/saves/my",
+app.get(
+    "/api/saves/my",
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
@@ -1725,7 +1774,7 @@ app.get("/api/saves/my",
                 .toArray();
 
             const ids = saves
-                .map((save) => {
+                .map(save => {
                     const id = String(save.eventId);
 
                     return ObjectId.isValid(id)
@@ -1737,6 +1786,7 @@ app.get("/api/saves/my",
             if (!ids.length) {
                 return res.json({ events: [] });
             }
+
             const savedEvents = await events
                 .find({
                     _id: { $in: ids },
@@ -1746,7 +1796,10 @@ app.get("/api/saves/my",
                 .toArray();
 
             res.json({
-                events: formatEvents(savedEvents, req.user!.email)
+                events: await formatEvents(
+                    savedEvents,
+                    req.user!.email
+                )
             });
 
         } catch (err: any) {
@@ -1755,58 +1808,12 @@ app.get("/api/saves/my",
             });
         }
     }
-)
+);
 
 
-// GET /api/saves/my — saved upcoming events for logged-in user
+// GET MY JOINED UPCOMING EVENTS
 app.get(
-    "/api/saves/my",
-    reqireAuth,
-    async (req: Request, res: Response) => {
-        try {
-            const saves = await savesCol
-                .find({ userEmail: req.user!.email })
-                .sort({ createdAt: -1 })
-                .toArray()
-
-            const ids = saves
-                .map((save) => {
-                    const id = String(save.eventId)
-
-                    if (!ObjectId.isValid(id)) {
-                        return null
-                    }
-
-                    return new ObjectId(id);
-                })
-                .filter((id): id is ObjectId => id !== null)
-
-            if (!ids.length) {
-                return res.json({ events: [] });
-            }
-
-            const savedEvents = await events
-                .find({
-                    _id: { $in: ids },
-                    date: { $gte: new Date() }
-                })
-                .sort({ date: 1 })
-                .toArray()
-
-            res.json({
-                events: formatEvents(savedEvents, req.user!.email)
-            })
-
-        } catch (err: any) {
-            res.status(500).json({
-                message: err.message
-            })
-        }
-    }
-)
-
-// GET /api/joins/my — joined upcoming events sorted by event date
-app.get("/api/joins/my",
+    "/api/joins/my",
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
@@ -1815,8 +1822,8 @@ app.get("/api/joins/my",
                 .toArray();
 
             const eventIds = joins
-                .filter((join) => ObjectId.isValid(String(join.eventId)))
-                .map((join) => new ObjectId(String(join.eventId)));
+                .filter(join => ObjectId.isValid(String(join.eventId)))
+                .map(join => new ObjectId(String(join.eventId)));
 
             if (!eventIds.length) {
                 return res.json({ events: [] });
@@ -1831,7 +1838,10 @@ app.get("/api/joins/my",
                 .toArray();
 
             res.json({
-                events: formatEvents(joinedEvents, req.user!.email)
+                events: await formatEvents(
+                    joinedEvents,
+                    req.user!.email
+                )
             });
 
         } catch (err: any) {
@@ -1842,35 +1852,8 @@ app.get("/api/joins/my",
     }
 );
 
-const listProjection = { description: 0 };
 
-const upcoming = () => ({
-    date: { $gte: new Date() }
-});
-
-// GET /api/events
-app.get(
-    "/api/events",
-    optionalAuth,
-    async (req: Request, res: Response) => {
-        try {
-            const allEvents = await events
-                .find(upcoming(), { projection: listProjection })
-                .sort({ date: 1 })
-                .toArray();
-
-            res.json({
-                events: formatEvents(allEvents, req.user?.email)
-            });
-        } catch (err: any) {
-            res.status(500).json({ message: err.message });
-        }
-    }
-);
-
-const messagesCol = db.collection("messages");
-
-// POST /api/contact — public contact form
+// POST CONTACT FORM
 const COOLDOWN_MS = 60_000;
 
 app.post(
@@ -1888,15 +1871,26 @@ app.post(
                 });
             }
 
-            const { name, email, topic, subject, message } = req.body;
+            const {
+                name,
+                email,
+                topic,
+                subject,
+                message
+            } = req.body;
 
             // Basic validation
             if (
-                !name?.trim() ||
-                !email?.trim() ||
-                !topic?.trim() ||
-                !subject?.trim() ||
-                !message?.trim()
+                typeof name !== "string" ||
+                !name.trim() ||
+                typeof email !== "string" ||
+                !email.trim() ||
+                typeof topic !== "string" ||
+                !topic.trim() ||
+                typeof subject !== "string" ||
+                !subject.trim() ||
+                typeof message !== "string" ||
+                !message.trim()
             ) {
                 return res.status(400).json({
                     message: "Please provide all required information"
@@ -1950,8 +1944,9 @@ app.post(
 );
 
 
-// DELETE /api/comments/:id — delete own comment or moderate event
-app.delete("/api/comments/:id",
+// DELETE COMMENT
+app.delete(
+    "/api/comments/:id",
     reqireAuth,
     async (req: Request, res: Response) => {
         try {
@@ -2011,18 +2006,19 @@ app.delete("/api/comments/:id",
     }
 );
 
+
 // SERVER
 app.listen(port, async () => {
     try {
-        await connectDB()
+        await connectDB();
 
         console.log(
             `Simple CRUD Server is running on port: ${port}`
-        )
+        );
 
     } catch (err: any) {
         console.log(
-            `Failedd to connect MongoDB: ${err.message}`
-        )
+            `Failed to connect MongoDB: ${err.message}`
+        );
     }
-})
+});
