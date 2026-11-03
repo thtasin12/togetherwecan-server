@@ -1842,6 +1842,32 @@ app.get("/api/joins/my",
     }
 );
 
+const listProjection = { description: 0 };
+
+const upcoming = () => ({
+    date: { $gte: new Date() }
+});
+
+// GET /api/events
+app.get(
+    "/api/events",
+    optionalAuth,
+    async (req: Request, res: Response) => {
+        try {
+            const allEvents = await events
+                .find(upcoming(), { projection: listProjection })
+                .sort({ date: 1 })
+                .toArray();
+
+            res.json({
+                events: formatEvents(allEvents, req.user?.email)
+            });
+        } catch (err: any) {
+            res.status(500).json({ message: err.message });
+        }
+    }
+);
+
 // SERVER
 app.listen(port, async () => {
     try {
