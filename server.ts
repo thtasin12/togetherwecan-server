@@ -20,8 +20,21 @@ const port = Number(process.env.PORT) || 5000;
 
 
 // MIDDLEWARE
+const ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "https://together-we-can-nine.vercel.app",
+    ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : [])
+];
+
 app.use(cors({
-    origin: process.env.CLIENT_URL || "http://localhost:3000",
+    origin: (origin, callback) => {
+        // Allow requests with no origin (e.g. curl, Postman, server-to-server)
+        if (!origin) return callback(null, true);
+        if (ALLOWED_ORIGINS.includes(origin)) {
+            return callback(null, origin);
+        }
+        return callback(new Error(`CORS: origin '${origin}' is not allowed`));
+    },
     credentials: true
 }));
 
@@ -36,13 +49,7 @@ if (!uri) {
     throw new Error("MONGODB_URI is not defined in .env");
 }
 
-const client = new MongoClient(uri, {
-    serverSelectionTimeoutMS: 10000,
-    socketTimeoutMS: 45000,
-    connectTimeoutMS: 10000,
-    maxPoolSize: 10,
-    minPoolSize: 1
-});
+const client = new MongoClient(uri);
 const db = client.db(process.env.DB_NAME);
 
 const usersCol = db.collection("user");
@@ -56,11 +63,8 @@ const messagesCol = db.collection("messages");
 
 
 // DATABASE CONNECTION
-let isDBConnected = false;
-
 const connectDB = async () => {
     await client.connect();
-    isDBConnected = true;
 
     await usersCol.createIndex(
         { email: 1 },
@@ -297,30 +301,11 @@ const formatEvents = async (
 };
 
 
-// DB HEALTH MIDDLEWARE - gives a clear error if DB not connected
-app.use((req: Request, res: Response, next: any) => {
-    if (!isDBConnected && req.path !== "/" && req.path !== "/health") {
-        return res.status(503).json({
-            message: "Database is not connected. Please try again in a moment."
-        });
-    }
-    next();
-});
-
-
 // HOME
 app.get("/", (req: Request, res: Response) => {
     res.send("Simple CRUD Server is running");
 });
 
-
-// HEALTH
-app.get("/health", (req: Request, res: Response) => {
-    res.json({
-        status: "ok",
-        db: isDBConnected ? "connected" : "disconnected"
-    });
-});
 
 // REGISTER
 app.post(
@@ -2045,10 +2030,8 @@ app.listen(port, async () => {
         );
 
     } catch (err: any) {
-        console.error(
-            `Failed to connect to MongoDB: ${err.message}`
+        console.log(
+            `Failed to connect MongoDB: ${err.message}`
         );
-        // Exit so Render/host can restart with fresh state
-        process.exit(1);
     }
 });
