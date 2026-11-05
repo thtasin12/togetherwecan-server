@@ -36,7 +36,13 @@ if (!uri) {
     throw new Error("MONGODB_URI is not defined in .env");
 }
 
-const client = new MongoClient(uri);
+const client = new MongoClient(uri, {
+    serverSelectionTimeoutMS: 10000,
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 10000,
+    maxPoolSize: 10,
+    minPoolSize: 1
+});
 const db = client.db(process.env.DB_NAME);
 
 const usersCol = db.collection("user");
@@ -50,8 +56,11 @@ const messagesCol = db.collection("messages");
 
 
 // DATABASE CONNECTION
+let isDBConnected = false;
+
 const connectDB = async () => {
     await client.connect();
+    isDBConnected = true;
 
     await usersCol.createIndex(
         { email: 1 },
@@ -288,11 +297,30 @@ const formatEvents = async (
 };
 
 
+// DB HEALTH MIDDLEWARE - gives a clear error if DB not connected
+app.use((req: Request, res: Response, next: any) => {
+    if (!isDBConnected && req.path !== "/" && req.path !== "/health") {
+        return res.status(503).json({
+            message: "Database is not connected. Please try again in a moment."
+        });
+    }
+    next();
+});
+
+
 // HOME
 app.get("/", (req: Request, res: Response) => {
     res.send("Simple CRUD Server is running");
 });
 
+
+// HEALTH
+app.get("/health", (req: Request, res: Response) => {
+    res.json({
+        status: "ok",
+        db: isDBConnected ? "connected" : "disconnected"
+    });
+});
 
 // REGISTER
 app.post(
@@ -2017,8 +2045,10 @@ app.listen(port, async () => {
         );
 
     } catch (err: any) {
-        console.log(
-            `Failed to connect MongoDB: ${err.message}`
+        console.error(
+            `Failed to connect to MongoDB: ${err.message}`
         );
+        // Exit so Render/host can restart with fresh state
+        process.exit(1);
     }
 });
